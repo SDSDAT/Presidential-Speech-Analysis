@@ -1,0 +1,171 @@
+---
+title: "Presidential Address"
+author: "Honey A. Adeleke"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+---
+
+
+## Loading Libraries
+
+```{r packages}
+library(readr)
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+library(wordcloud)
+library(wordcloud2)
+library(tm)
+library(syuzhet)
+library(dplyr)
+library(topicmodels)
+library(broom)
+library(tidyverse)
+```
+
+## Reading your data into R
+Firstly, you must set your working directory properly, before proceeding to load data into R
+There are different ways to import into R
+For example,
+speech= read.csv(file.choose(), header = T)
+From the result, the structure of the text is dataframe
+```{r Importing_Data, echo=T}
+speech<-read.csv("Presidential Speech (Aug 04, 2024).csv", header = T)
+str(speech)
+```
+
+
+# Build Corpus
+Corpus is a collection of documents
+```{r Building_Corpus, echo=T}
+corpus = iconv(speech, to= "UTF-8")
+corpus1 = Corpus(VectorSource(corpus))
+inspect(corpus1)
+```
+
+## Text Cleaning
+Here, I have to bring all upper cases to lower, remove all punctuation marks, remove all numbers, and remove all stop words. Finally, I had to clear all white spaces
+```{r Cleaning_the_text, echo=T, warning=FALSE}
+corpus2=tm_map(corpus1, tolower) # To make bring document to lower case
+corpus3=tm_map(corpus2, removePunctuation) # To remove punctuation
+corpus4=tm_map(corpus3, removeNumbers) # remove number
+cleanset=tm_map(corpus4, removeWords, stopwords('english')) # To remove English words that are common and will not add much values
+cleanset1=tm_map(cleanset, stripWhitespace) #To get rid of the extra spaces
+inspect(cleanset1)
+```
+
+#Term document Matrix
+Tweet is an unstructured data
+TDM will put all unstructured data to row and columns, where the first column stands for each words or terms and the second column represent the frequencies of each words
+```{r TDM, echo=T}
+speech_tdm<-TermDocumentMatrix(cleanset1)
+speech_tdm1 = as.matrix(speech_tdm)
+write.csv(speech_tdm1, "Presidential Speech Freq.csv")
+```
+
+
+# Barplot
+I showed two bar plot here. The first one shows words with frequency greater than or equal to 3 while the second one shows words with frequency greater than or equal to 5. The second bar plot clearly shows the most frequently used words are will, also, country, nation and people. 
+```{r Bar_plot, echo=T}
+speech_bar=rowSums(speech_tdm1) #To find how often each row appears
+speech_bar1=subset(speech_bar,speech_bar>=3) #words with frequency greater than or equal to 3 will appear
+speech_bar1=subset(speech_bar,speech_bar>=5) #words with frequency greater than or equal to 5 will appear
+barplot(speech_bar1,
+        las =2,
+        col = rainbow(7))
+```
+
+#WORD CLOUD
+Visualizing the text in a word cloud also emphasizes the words most often used in the presidential speech
+```{r Word_cloud, echo=T}
+speech_bar2<- sort(rowSums(speech_tdm1), decreasing = T)
+wordcloud(words = names(speech_bar2),
+          freq = speech_bar2,
+          max.words = 1000,
+          random.order = F,
+          min.freq = 30,
+          colors = brewer.pal(7,"Dark2"),
+          scale = c(2,0.1),
+          rot.per = 0.3)
+```
+Another Word Cloud package name word cloud 2 was used here in order to visualize the data in a more colorful way 
+
+```{r Word_cloud2, echo=T}
+library(wordcloud2)
+speech_bar3<-data.frame(names(speech_bar2),speech_bar2)
+colnames(speech_bar3)<-c("word", "freq")
+wordcloud2(speech_bar3,
+           size=0.2,
+           shape="circle")
+
+wordcloud2(speech_bar3,
+           size=0.2,
+           shape="star",
+           rotateRatio = 0.4,
+           minSize = 1)
+```
+
+
+# Sentiment Analysis
+Sentiment analysis was further carried out to have a glimpse of the sentiments of the words in the presidential speech. Here, I can see that the sentiment with highest frequency is Positive and the one with the lowest frequency is disgust. Going further to just pick a word which in this case **Subsidy** and observe the distribution, I noticed that the word subsidy as a word in the presidential speech contain many sentiments which are anger disgust and negative
+```{r Sentiment_Analysis, echo=T}
+library(syuzhet)
+library(dplyr)
+# Read file
+speech = read.csv("Presidential speech (Aug 04, 2024).csv", header = T)
+speech<-iconv(speech, to= "windows-1252")
+speech_sentiment <- get_nrc_sentiment(speech)
+write.csv(speech_sentiment, "Presidential Speech sentiment.csv")
+head(speech_sentiment)
+get_nrc_sentiment("subsidy")
+```
+#barplot
+The bar plot here shows the distribution of the sentiments in the presidential speech, and  positive sentiments and trust sentiments are the most frequent sentiments, while disgust and surprise are the least frequent sentiments in the presidential speech on August 04, 2024
+```{r Barplot2}
+barplot(colSums(speech_sentiment),
+        las = 2,
+        col = rainbow(10),
+        ylab = "Count",
+        main = "Synopsis")
+```
+
+
+##Topic Modelling
+The following steps was carried out 
+--Create a document-term matrix
+--Fit the LDA model
+--Get the top terms for each topic
+--Visualize the top terms for each topic
+In topic modelling, each topic is represented by a set of words with associated probabilities. The higher the probability, the more representative the word is for that topic. 
+For the first topic, `National Economy and Development` fits in to the words. This label fits well because words like "economy," "nation," "states," "million," and "country" suggest a focus on economic issues and national development
+I believe `Energy and Economic Initiatives` summarizes Topic 2. The presence of words like "economic," "projects," "gas," and "country" suggests the topic might be about energy-related initiatives and their economic impact.
+`Future Economic Initiatives and Hope` captures Topic 3. This label fits well because words like "economic," "initiative," "future," "hope," and "country" suggest a focus on future economic initiatives and a sense of hope for positive changes.
+For Topic 4, `National Economic Policies and Foreign Relations` fits in to the top ten words. Words like "economy," "states," "billion," and "foreign" suggest a focus on national economic policies and foreign relations.
+`Government Initiatives and National Production` summarizes Topic 5. This label fits well because words like "government," "nation," "production," and "work" suggest a focus on government initiatives and national production efforts.
+```{r Topic Modelling, echo=TRUE}
+dtm <- DocumentTermMatrix(VCorpus(VectorSource(cleanset1)))
+lda_model <- LDA(dtm, k = 5, control = list(seed = 1234))
+topics <- tidy(lda_model, matrix = "beta")
+top_terms <- topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms %>%
+  ggplot(aes(x = reorder_within(term, beta, topic), y = beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free_y") +
+  coord_flip() +
+  scale_x_reordered() +
+  labs(title = "Top Terms in Each Topic", x = "Term", y = "Beta")
+```
+
+In summary, the 5 themes/ topics deduced from the presidential speech on Aug 4th, 2024 are
+--1. National Economy and Development
+--2. Energy and Economic Initiatives
+--3. Future Economic Initiatives and Hope
+--4. National Economic Policies and Foreign Relations
+--5. Government Initiatives and National Production
